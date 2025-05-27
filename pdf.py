@@ -1,78 +1,205 @@
 import io
-from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER
 import pandas as pd
-import plotly.io as pio
+import plotly.graph_objects as go
 import base64
-from datetime import datetime
-import os # Import os for environment check
 
-def generate_segment_report(df, features, figures):
+def generate_segment_report(clustered_df=None, analysis_type="General Clustering", figures=None,
+                            apriori_frequent_itemsets=None, apriori_association_rules=None):
     """
-    Generate a PDF report for the segmentation analysis
-    
+    Generates a comprehensive PDF report for customer segmentation analysis.
+
     Parameters:
     -----------
-    df : DataFrame
-        Data with cluster assignments
-    features : list
-        List of feature column names
-    figures : list
-        List of plotly figures
-    
+    clustered_df : pd.DataFrame, optional
+        The DataFrame containing clustered customer data, including a 'Cluster' column.
+        Required for General Clustering and RFM Analysis sections.
+    analysis_type : str
+        The type of analysis performed ('general_clustering', 'rfm_analysis', 'apriori_analysis', etc.).
+        Used for dynamic content generation.
+    figures : list of plotly.graph_objects.Figure, optional
+        A list of Plotly figures to be included in the report.
+    apriori_frequent_itemsets : pd.DataFrame, optional
+        DataFrame containing frequent itemsets from Apriori analysis.
+    apriori_association_rules : pd.DataFrame, optional
+        DataFrame containing association rules from Apriori analysis.
+
     Returns:
     --------
-    bytes object containing the PDF
+    io.BytesIO
+        A BytesIO object containing the generated PDF.
     """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
-    
-    # Styles
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='Center', alignment=1, parent=styles['Heading1']))
-    styles.add(ParagraphStyle(name='Heading2Centered', alignment=1, fontSize=14, spaceAfter=6, parent=styles['h2']))
-    styles.add(ParagraphStyle(name='NormalSmall', fontSize=9, parent=styles['Normal']))
     
-    Story = []
-
-    print("PDF Generation: Starting report generation...")
-
-    # Title Page
-    Story.append(Paragraph("Customer Segmentation Report", styles['Center']))
-    Story.append(Spacer(1, 0.2 * inch))
-    Story.append(Paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Center']))
-    Story.append(Spacer(1, 0.5 * inch))
-    Story.append(Paragraph("This report provides an overview of customer segments identified using various analytical techniques.", styles['Normal']))
-    Story.append(Spacer(1, 2 * inch))
-    print("PDF Generation: Title page added.")
-
-    # Executive Summary (Page 2)
-    Story.append(Spacer(1, 0.5 * inch)) # Add space to push content to next page or lower
-    Story.append(Paragraph("1. Executive Summary", styles['h1']))
-    Story.append(Spacer(1, 0.1 * inch))
-    Story.append(Paragraph(
-        "This report details the customer segmentation derived from the provided dataset. By grouping customers with similar characteristics, businesses can develop targeted marketing strategies, improve customer engagement, and optimize resource allocation. The analysis identifies distinct customer segments based on their behavioral patterns.",
-        styles['Normal']
-    ))
-    Story.append(Spacer(1, 0.2 * inch))
-    print("PDF Generation: Executive Summary added.")
-
-    # Segmentation Overview
-    Story.append(Paragraph("2. Segmentation Overview", styles['h1']))
-    Story.append(Spacer(1, 0.1 * inch))
-    Story.append(Paragraph("K-Means Segment Distribution:", styles['h2']))
+    # Custom style for titles
+    title_style = ParagraphStyle(
+        'TitleStyle',
+        parent=styles['h1'],
+        fontSize=24,
+        spaceAfter=14,
+        alignment=TA_CENTER
+    )
     
-    # K-Means Segment Table
-    if 'Cluster' in df.columns:
-        cluster_counts = df['Cluster'].value_counts(normalize=True).reset_index()
-        cluster_counts.columns = ['K-Means Segment', 'Percentage']
-        cluster_counts['Percentage'] = cluster_counts['Percentage'].apply(lambda x: f"{x:.1%}")
+    # Custom style for section headings
+    heading_style = ParagraphStyle(
+        'HeadingStyle',
+        parent=styles['h2'],
+        fontSize=16,
+        spaceBefore=12,
+        spaceAfter=6
+    )
+
+    # Custom style for sub-headings
+    sub_heading_style = ParagraphStyle(
+        'SubHeadingStyle',
+        parent=styles['h3'],
+        fontSize=14,
+        spaceBefore=10,
+        spaceAfter=4
+    )
+
+    # Custom style for normal text
+    normal_style = styles['Normal']
+    normal_style.fontSize = 10
+    normal_style.leading = 12 # Line spacing
+
+    # Custom style for table text
+    table_style = ParagraphStyle(
+        'TableStyle',
+        parent=styles['Normal'],
+        fontSize=8, # Smaller font for tables
+        leading=10
+    )
+
+    story = []
+
+    # --- Cover Page ---
+    story.append(Paragraph("Customer Segmentation Report", title_style))
+    story.append(Spacer(1, 0.5 * inch))
+    story.append(Paragraph(f"Analysis Type: {analysis_type.replace('_', ' ').title()}", styles['h3']))
+    story.append(Spacer(1, 0.2 * inch))
+    story.append(Paragraph(f"Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+    story.append(Spacer(1, 2 * inch))
+    story.append(Paragraph("Generated by Your Customer Segmentation App", styles['Normal']))
+    story.append(PageBreak())
+
+    # --- Introduction ---
+    story.append(Paragraph("Introduction", heading_style))
+    story.append(Paragraph(
+        "This report provides an in-depth analysis of customer behavior and segmentation based on the uploaded dataset. "
+        "Understanding customer segments allows businesses to tailor marketing strategies, improve product offerings, "
+        "and enhance customer relationships.", normal_style))
+    story.append(Spacer(1, 0.2 * inch))
+    story.append(Paragraph(f"The primary analysis performed was: <b>{analysis_type.replace('_', ' ').title()}</b>.", normal_style))
+    story.append(PageBreak())
+
+    # --- Clustering Analysis Section (if applicable) ---
+    if clustered_df is not None and not clustered_df.empty and (analysis_type == 'general_clustering' or analysis_type == 'rfm_analysis'):
+        story.append(Paragraph("Customer Segmentation Analysis", heading_style))
+        story.append(Paragraph(
+            "This section details the results of the customer clustering analysis, identifying distinct groups of customers "
+            "based on their behavioral patterns.", normal_style))
+        story.append(Spacer(1, 0.2 * inch))
+
+        # Summary Table of Clusters
+        story.append(Paragraph("Summary of Customer Segments", sub_heading_style))
+        if 'Cluster' in clustered_df.columns:
+            cluster_summary = clustered_df['Cluster'].value_counts().reset_index()
+            cluster_summary.columns = ['Cluster', 'Number of Customers']
+            cluster_summary['Percentage'] = (cluster_summary['Number of Customers'] / cluster_summary['Number of Customers'].sum() * 100).round(2)
+            cluster_summary_data = [['Cluster', 'Number of Customers', 'Percentage (%)']] + cluster_summary.values.tolist()
+            
+            # Convert all elements to string for ReportLab Table
+            cluster_summary_data = [[str(item) for item in row] for row in cluster_summary_data]
+
+            from reportlab.platypus import Table, TableStyle
+            from reportlab.lib import colors
+
+            table = Table(cluster_summary_data)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(table)
+            story.append(Spacer(1, 0.2 * inch))
+            story.append(Paragraph(
+                "The table above provides an overview of the number and percentage of customers in each identified segment.", normal_style))
+            story.append(Spacer(1, 0.2 * inch))
         
-        table_data = [cluster_counts.columns.tolist()] + cluster_counts.values.tolist()
-        table_style = TableStyle([
+        # RFM Specific Summary (if applicable)
+        if analysis_type == 'rfm_analysis' and 'RFM_Segment' in clustered_df.columns:
+            story.append(Paragraph("RFM Segment Breakdown", sub_heading_style))
+            rfm_segment_summary = clustered_df['RFM_Segment'].value_counts().reset_index()
+            rfm_segment_summary.columns = ['RFM Segment', 'Number of Customers']
+            rfm_segment_summary['Percentage'] = (rfm_segment_summary['Number of Customers'] / rfm_segment_summary['Number of Customers'].sum() * 100).round(2)
+            rfm_segment_summary_data = [['RFM Segment', 'Number of Customers', 'Percentage (%)']] + rfm_segment_summary.values.tolist()
+            
+            rfm_segment_summary_data = [[str(item) for item in row] for row in rfm_segment_summary_data]
+
+            table_rfm = Table(rfm_segment_summary_data)
+            table_rfm.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(table_rfm)
+            story.append(Spacer(1, 0.2 * inch))
+            story.append(Paragraph(
+                "This table provides a breakdown of customers across the predefined RFM segments, offering insights into their value and engagement.", normal_style))
+            story.append(Spacer(1, 0.2 * inch))
+
+
+        # Include Figures
+        if figures:
+            story.append(Paragraph("Visualizations of Customer Segments", sub_heading_style))
+            for i, fig in enumerate(figures):
+                img_bytes = fig.to_image(format="png", engine="kaleido")
+                img = Image(io.BytesIO(img_bytes))
+                img.width = 500 # Adjust width to fit page
+                img.height = img.width * (fig.layout.height / fig.layout.width) if fig.layout.width else 300 # Maintain aspect ratio
+                
+                # Center the image
+                img.hAlign = 'CENTER'
+                
+                story.append(img)
+                story.append(Spacer(1, 0.1 * inch))
+                story.append(Paragraph(f"Figure {i+1}: {fig.layout.title.text if fig.layout.title else 'Untitled Figure'}", normal_style))
+                story.append(Spacer(1, 0.3 * inch))
+                if (i + 1) % 2 == 0 and i < len(figures) - 1: # Add page break after every 2 figures (adjust as needed)
+                    story.append(PageBreak())
+            story.append(PageBreak())
+
+    # --- Apriori Analysis Section (if applicable) ---
+    if apriori_frequent_itemsets is not None and not apriori_frequent_itemsets.empty:
+        story.append(Paragraph("Apriori Association Rule Analysis", heading_style))
+        story.append(Paragraph(
+            "This section presents the results of the Apriori algorithm, which identifies frequent itemsets and "
+            "association rules in transactional data, useful for understanding product co-occurrence.", normal_style))
+        story.append(Spacer(1, 0.2 * inch))
+
+        story.append(Paragraph("Frequent Itemsets", sub_heading_style))
+        # Limit columns for display if too many
+        cols_to_display_fi = ['itemsets', 'support']
+        fi_data = [['Itemsets', 'Support']] + apriori_frequent_itemsets[cols_to_display_fi].values.tolist()
+        fi_data = [[str(item) for item in row] for row in fi_data]
+        
+        table_fi = Table(fi_data)
+        table_fi.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -80,25 +207,22 @@ def generate_segment_report(df, features, figures):
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ])
-        t = Table(table_data)
-        t.setStyle(table_style)
-        Story.append(t)
-        Story.append(Spacer(1, 0.2 * inch))
-        print("PDF Generation: K-Means Segment Distribution table added.")
-    else:
-        Story.append(Paragraph("K-Means Cluster information not available.", styles['NormalSmall']))
-        print("PDF Generation: K-Means Cluster information not available (skipped table).")
+        ]))
+        story.append(table_fi)
+        story.append(Spacer(1, 0.2 * inch))
+        story.append(Paragraph(
+            "Frequent itemsets are collections of items that frequently appear together in transactions. 'Support' indicates their prevalence.", normal_style))
+        story.append(Spacer(1, 0.2 * inch))
 
-    # RFM Segment Distribution (if applicable)
-    if 'RFM_Segment' in df.columns:
-        Story.append(Paragraph("RFM Segment Distribution:", styles['h2']))
-        rfm_counts = df['RFM_Segment'].value_counts(normalize=True).reset_index()
-        rfm_counts.columns = ['RFM Segment', 'Percentage']
-        rfm_counts['Percentage'] = rfm_counts['Percentage'].apply(lambda x: f"{x:.1%}")
-        
-        table_data_rfm = [rfm_counts.columns.tolist()] + rfm_counts.values.tolist()
-        table_style_rfm = TableStyle([
+    if apriori_association_rules is not None and not apriori_association_rules.empty:
+        story.append(Paragraph("Association Rules", sub_heading_style))
+        # Limit columns for display if too many
+        cols_to_display_ar = ['antecedents', 'consequents', 'support', 'confidence', 'lift']
+        ar_data = [['Antecedents', 'Consequents', 'Support', 'Confidence', 'Lift']] + apriori_association_rules[cols_to_display_ar].values.tolist()
+        ar_data = [[str(item) for item in row] for row in ar_data]
+
+        table_ar = Table(ar_data)
+        table_ar.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -106,93 +230,25 @@ def generate_segment_report(df, features, figures):
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ])
-        t_rfm = Table(table_data_rfm)
-        t_rfm.setStyle(table_style_rfm)
-        Story.append(t_rfm)
-        Story.append(Spacer(1, 0.2 * inch))
-        print("PDF Generation: RFM Segment Distribution table added.")
-    else:
-        Story.append(Paragraph("RFM Segment information not available.", styles['NormalSmall']))
-        print("PDF Generation: RFM Segment information not available (skipped table).")
+        ]))
+        story.append(table_ar)
+        story.append(Spacer(1, 0.2 * inch))
+        story.append(Paragraph(
+            "Association rules identify relationships between items. 'Confidence' measures the reliability of the inference, "
+            "and 'Lift' indicates how much more likely item Y is purchased when item X is purchased, relative to their independent probabilities.", normal_style))
+        story.append(PageBreak())
 
+    # --- Conclusion (General) ---
+    story.append(Paragraph("Conclusion", heading_style))
+    story.append(Paragraph(
+        "This report has provided insights into customer behavior through various analytical techniques. "
+        "These findings can be leveraged to develop targeted marketing campaigns, optimize product placement, "
+        "and improve overall customer satisfaction.", normal_style))
+    story.append(Spacer(1, 0.2 * inch))
+    story.append(Paragraph(
+        "For further analysis, consider exploring additional data points, experimenting with different clustering algorithms, "
+        "or conducting deeper dives into specific customer segments.", normal_style))
 
-    # K-Means Segment Profiles
-    if 'Cluster' in df.columns and features:
-        Story.append(Paragraph("3. K-Means Segment Profiles", styles['h1']))
-        Story.append(Spacer(1, 0.1 * inch))
-        Story.append(Paragraph("Average values of features by K-Means segment:", styles['Normal']))
-        
-        cluster_profiles = df.groupby('Cluster')[features].mean().round(2).reset_index()
-        table_data_profiles = [cluster_profiles.columns.tolist()] + cluster_profiles.values.tolist()
-        
-        table_style_profiles = TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ])
-        t_profiles = Table(table_data_profiles)
-        t_profiles.setStyle(table_style_profiles)
-        Story.append(t_profiles)
-        Story.append(Spacer(1, 0.2 * inch))
-        print("PDF Generation: K-Means Segment Profiles table added.")
-    else:
-        Story.append(Paragraph("K-Means Cluster profile information not available.", styles['NormalSmall']))
-        print("PDF Generation: K-Means Cluster profile information not available (skipped table).")
-
-    # Visualizations
-    Story.append(Paragraph("4. Visualizations", styles['h1']))
-    Story.append(Spacer(1, 0.1 * inch))
-    print(f"PDF Generation: Attempting to add {len(figures)} visualizations.")
-
-    for i, fig in enumerate(figures):
-        if fig is None: # Skip if the figure is None (e.g., if RFM graph was not generated)
-            print(f"PDF Generation: Skipping figure {i+1} as it is None.")
-            continue
-        try:
-            print(f"PDF Generation: Converting figure {i+1} ('{fig.layout.title.text if fig.layout.title.text else 'Untitled'}') to image...")
-            # Convert Plotly figure to a static image (PNG)
-            img_bytes = pio.to_image(fig, format="png", engine="kaleido", width=800, height=500, scale=2) # Increased scale for better resolution
-            img_data = io.BytesIO(img_bytes)
-            
-            # Create ReportLab Image object
-            # Calculate width to fit page, maintaining aspect ratio
-            img = Image(img_data)
-            img_width, img_height = img.drawWidth, img.drawHeight
-            aspect = img_height / float(img_width)
-            
-            # Max width for an image on a letter page (approx 6.5 inches)
-            max_width = 6.5 * inch 
-            if img_width > max_width:
-                img_width = max_width
-                img_height = img_width * aspect
-
-            img.drawWidth = img_width
-            img.drawHeight = img_height
-            
-            Story.append(img)
-            Story.append(Spacer(1, 0.1 * inch))
-            Story.append(Paragraph(f"Figure {i+1}: {fig.layout.title.text if fig.layout.title.text else 'Segmentation Plot'}", styles['NormalSmall']))
-            Story.append(Spacer(1, 0.2 * inch))
-            print(f"PDF Generation: Successfully added figure {i+1} to report.")
-        except Exception as e:
-            print(f"PDF Generation Error: Could not convert figure {i+1} ('{fig.layout.title.text if fig.layout.title.text else 'Untitled'}') to image. Error: {e}")
-            Story.append(Paragraph(f"Figure {i+1} could not be generated due to an error: {e}", styles['NormalSmall']))
-            Story.append(Spacer(1, 0.2 * inch))
-
-    # Build the PDF
-    print("PDF Generation: Attempting to build the PDF document...")
-    try:
-        doc.build(Story)
-        buffer.seek(0)
-        print("PDF Generation: PDF document built successfully.")
-        return buffer.getvalue()
-    except Exception as e:
-        print(f"PDF Generation Error: Error building PDF document: {e}")
-        # Re-raise the exception to be caught by the Dash callback if needed for debugging
-        raise
-
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
