@@ -465,7 +465,7 @@ def create_clustering_visualizations(clustered_df, original_df, features, analys
                                                          color='Order_Amount_Range_QP',
                                                          color_discrete_sequence=px.colors.qualitative.Pastel)
                     # Set textinfo to 'none' for no text on slices, and explicitly set hoverinfo
-                    fig8_order_amount_qp_ranges.update_traces(textinfo='none', hoverinfo='label+percent', pull=[0.05] * len(df_temp['Order_Amount_Range_QP'].unique()))
+                    fig8_order_amount_qp_ranges.update_traces(textinfo='none', hoverinfo='label+percent', pull=[0.05] * len(df_temp_qp['Order_Amount_Range_QP'].unique()))
                     fig8_order_amount_qp_ranges.update_layout(legend_title_text='Order Amount Range')
                 else:
                     fig8_order_amount_qp_ranges = go.Figure().add_annotation(text="Order Amount (Q*P) data insufficient for ranges after cleaning.",
